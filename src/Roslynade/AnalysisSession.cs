@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Text;
 using Roslynade.agent;
+using Roslynade.Models;
+using Roslynade.Rendering;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
@@ -21,6 +23,7 @@ namespace Roslynade
         public AnalysisFileStatus Status { get; set; } = AnalysisFileStatus.Pending;
         public string? StructureSummary { get; set; }
         public StringBuilder OutputBuffer { get; } = new();
+        public CodeReviewResult? ParsedReview { get; set; }
         public string? ErrorMessage { get; set; }
         public int ScrollOffset { get; set; }
         public bool AutoScroll { get; set; } = true;
@@ -90,9 +93,25 @@ namespace Roslynade
                         lock (file.LockObj)
                         {
                             file.OutputBuffer.Append(chunk);
+                            if (file.ParsedReview == null && chunk.Contains('}'))
+                            {
+                                if (CodeReviewParser.TryParse(file.OutputBuffer.ToString(), out var eagerReview))
+                                {
+                                    file.ParsedReview = eagerReview;
+                                }
+                            }
                         }
                     }
                     file.Status = AnalysisFileStatus.Done;
+                    string finalOutput;
+                    lock (file.LockObj)
+                    {
+                        finalOutput = file.OutputBuffer.ToString();
+                    }
+                    if (file.ParsedReview == null && CodeReviewParser.TryParse(finalOutput, out var review))
+                    {
+                        file.ParsedReview = review;
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -232,10 +251,30 @@ namespace Roslynade
                         lock (file.LockObj)
                         {
                             file.OutputBuffer.Append(chunk);
+                            if (file.ParsedReview == null && chunk.Contains('}'))
+                            {
+                                if (CodeReviewParser.TryParse(file.OutputBuffer.ToString(), out var eagerReview))
+                                {
+                                    file.ParsedReview = eagerReview;
+                                }
+                            }
                         }
                     }
                     file.Status = AnalysisFileStatus.Done;
-                    AnsiConsole.MarkupLine($"[green]Finished:[/] {file.FileName}");
+                    string finalOutput;
+                    lock (file.LockObj)
+                    {
+                        finalOutput = file.OutputBuffer.ToString();
+                    }
+                    if (CodeReviewParser.TryParse(finalOutput, out var review))
+                    {
+                        file.ParsedReview = review;
+                        AnsiConsole.MarkupLine($"[green]Finished:[/] {file.FileName} - [bold]Score:[/] {review.OverallScore}/100 ([yellow]{review.Issues.Count} findings[/])");
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine($"[green]Finished:[/] {file.FileName}");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -278,10 +317,11 @@ namespace Roslynade
 
                 string safeName = Markup.Escape(file.FileName);
                 int numKey = i + 1;
+                string scoreSuffix = file.ParsedReview != null ? $" ({file.ParsedReview.OverallScore}pts)" : "";
 
                 if (isActive)
                 {
-                    tabBadges.Add($"[black on cyan]  {numKey}. {safeName} ({statusText})  [/]");
+                    tabBadges.Add($"[black on cyan]  {numKey}. {safeName}{scoreSuffix} ({statusText})  [/]");
                 }
                 else
                 {
@@ -292,11 +332,19 @@ namespace Roslynade
                         AnalysisFileStatus.Error => "red",
                         _ => "grey"
                     };
-                    tabBadges.Add($"[{color}] {numKey}. {safeName} ({statusText}) [/]");
+                    tabBadges.Add($"[{color}] {numKey}. {safeName}{scoreSuffix} ({statusText}) [/]");
                 }
             }
 
-            var tabRow = new Markup(string.Join(" ", tabBadges));
+            IRenderable tabRow;
+            try
+            {
+                tabRow = new Markup(string.Join(" ", tabBadges));
+            }
+            catch
+            {
+                tabRow = new Text(string.Join(" ", tabBadges));
+            }
             grid.AddRow(tabRow);
 
             // 2. Instructions bar
@@ -305,21 +353,6 @@ namespace Roslynade
 
             // 3. Active Tab Panel
             var activeFile = _files[_activeTabIndex];
-            string content;
-            lock (activeFile.LockObj)
-            {
-                content = activeFile.OutputBuffer.ToString();
-            }
-
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                content = activeFile.Status switch
-                {
-                    AnalysisFileStatus.Pending => "Queued, waiting for inference worker...",
-                    AnalysisFileStatus.Analyzing => "Parsing AST and generating review with local LLM...",
-                    _ => "No content."
-                };
-            }
 
             int windowHeight = 25;
             int windowWidth = 80;
@@ -337,23 +370,83 @@ namespace Roslynade
             int viewportHeight = Math.Max(5, windowHeight - 7);
             int usableWidth = Math.Max(20, windowWidth - 6);
 
-            var wrappedLines = new List<string>();
-            foreach (var rawLine in content.Replace("\r\n", "\n").Split('\n'))
+            List<string> displayLines;
+            bool isMarkupContent = false;
+
+            if (activeFile.ParsedReview != null)
             {
-                if (rawLine.Length <= usableWidth)
+                displayLines = CodeReviewRenderer.FormatScrollableMarkupLines(activeFile.ParsedReview, usableWidth);
+                isMarkupContent = true;
+            }
+            else if (activeFile.Status == AnalysisFileStatus.Analyzing)
+            {
+                isMarkupContent = true;
+                displayLines = new List<string>
                 {
-                    wrappedLines.Add(rawLine);
+                    $"[bold cyan]{spinnerChar} Generating C# static analysis recommendations with local LLM...[/]",
+                    string.Empty
+                };
+
+                if (!string.IsNullOrEmpty(activeFile.StructureSummary))
+                {
+                    displayLines.Add($"[grey]Roslyn AST:[/] [cyan]{Markup.Escape(activeFile.StructureSummary)}[/]");
+                    displayLines.Add(string.Empty);
                 }
-                else
+
+                int charCount;
+                string streamSnapshot;
+                lock (activeFile.LockObj)
                 {
-                    for (int i = 0; i < rawLine.Length; i += usableWidth)
+                    charCount = activeFile.OutputBuffer.Length;
+                    streamSnapshot = activeFile.OutputBuffer.ToString();
+                }
+
+                displayLines.Add($"[grey]Inference Stream:[/] [yellow]{charCount:N0} characters received[/]");
+                displayLines.Add("[grey]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]");
+
+                var previewLines = streamSnapshot.Replace("\r\n", "\n").Split('\n');
+                var recentLines = previewLines.Where(l => !string.IsNullOrWhiteSpace(l)).TakeLast(Math.Max(3, viewportHeight - 8));
+                foreach (var line in recentLines)
+                {
+                    string safeLine = Markup.Escape(line.Length > usableWidth ? line.Substring(0, usableWidth) : line);
+                    displayLines.Add($"  [grey italic]{safeLine}[/]");
+                }
+            }
+            else
+            {
+                string content;
+                lock (activeFile.LockObj)
+                {
+                    content = activeFile.OutputBuffer.ToString();
+                }
+
+                if (string.IsNullOrWhiteSpace(content))
+                {
+                    content = activeFile.Status switch
                     {
-                        wrappedLines.Add(rawLine.Substring(i, Math.Min(usableWidth, rawLine.Length - i)));
+                        AnalysisFileStatus.Pending => "Queued, waiting for inference worker...",
+                        _ => "No content."
+                    };
+                }
+
+                displayLines = new List<string>();
+                foreach (var rawLine in content.Replace("\r\n", "\n").Split('\n'))
+                {
+                    if (rawLine.Length <= usableWidth)
+                    {
+                        displayLines.Add(rawLine);
+                    }
+                    else
+                    {
+                        for (int i = 0; i < rawLine.Length; i += usableWidth)
+                        {
+                            displayLines.Add(rawLine.Substring(i, Math.Min(usableWidth, rawLine.Length - i)));
+                        }
                     }
                 }
             }
 
-            int totalLines = wrappedLines.Count;
+            int totalLines = displayLines.Count;
             int maxOffset = Math.Max(0, totalLines - viewportHeight);
 
             if (activeFile.AutoScroll)
@@ -369,8 +462,7 @@ namespace Roslynade
                 }
             }
 
-            var visibleLines = wrappedLines.Skip(activeFile.ScrollOffset).Take(viewportHeight);
-            string visibleText = string.Join("\n", visibleLines);
+            var visibleLines = displayLines.Skip(activeFile.ScrollOffset).Take(viewportHeight).ToList();
 
             string statusDescription = activeFile.Status switch
             {
@@ -393,7 +485,12 @@ namespace Roslynade
             {
                 headerText += $" {scrollIndicator}";
             }
-            if (!string.IsNullOrEmpty(activeFile.StructureSummary))
+            if (activeFile.ParsedReview != null)
+            {
+                string sColor = activeFile.ParsedReview.OverallScore >= 80 ? "green" : activeFile.ParsedReview.OverallScore >= 60 ? "yellow" : "red";
+                headerText += $" - [{sColor} bold]Score: {activeFile.ParsedReview.OverallScore}/100[/]";
+            }
+            else if (!string.IsNullOrEmpty(activeFile.StructureSummary))
             {
                 headerText += $" - [grey]{Markup.Escape(activeFile.StructureSummary)}[/]";
             }
@@ -406,7 +503,20 @@ namespace Roslynade
                 _ => Color.Grey
             };
 
-            var panel = new Panel(new Text(visibleText))
+            IRenderable panelBody;
+            if (isMarkupContent)
+            {
+                var markupItems = visibleLines
+                    .Select(l => SafeMarkup(l))
+                    .ToList();
+                panelBody = markupItems.Count > 0 ? new Rows(markupItems) : new Text("");
+            }
+            else
+            {
+                panelBody = new Text(string.Join("\n", visibleLines));
+            }
+
+            var panel = new Panel(panelBody)
             {
                 Header = new PanelHeader(headerText),
                 Border = BoxBorder.Rounded,
@@ -426,8 +536,9 @@ namespace Roslynade
                 .Title("[bold yellow]Multi-File Analysis Summary[/]")
                 .AddColumn("File")
                 .AddColumn("Status")
-                .AddColumn("Structure Summary")
-                .AddColumn("Recommendation Length");
+                .AddColumn(new TableColumn("Score").Centered())
+                .AddColumn("Findings")
+                .AddColumn("Structure Summary");
 
             foreach (var file in _files)
             {
@@ -439,22 +550,65 @@ namespace Roslynade
                     _ => "[grey]Pending[/]"
                 };
 
-                int charCount;
-                lock (file.LockObj)
+                string scoreText = "-";
+                string findingsText = "-";
+
+                if (file.ParsedReview != null)
                 {
-                    charCount = file.OutputBuffer.Length;
+                    var rev = file.ParsedReview;
+                    string sColor = rev.OverallScore >= 80 ? "green" : rev.OverallScore >= 60 ? "yellow" : "red";
+                    scoreText = $"[{sColor} bold]{rev.OverallScore}/100[/]";
+
+                    var (errs, warns, suggs) = CodeReviewRenderer.GetSeverityCounts(rev);
+                    findingsText = $"[red]{errs} err[/], [yellow]{warns} warn[/], [cyan]{suggs} sugg[/]";
+                }
+                else
+                {
+                    int charCount;
+                    lock (file.LockObj)
+                    {
+                        charCount = file.OutputBuffer.Length;
+                    }
+                    if (charCount > 0)
+                    {
+                        findingsText = $"[grey]{charCount:N0} chars (raw)[/]";
+                    }
                 }
 
                 table.AddRow(
                     new Markup($"[bold]{Markup.Escape(file.FileName)}[/]"),
                     new Markup(statusMarkup),
-                    new Text(file.StructureSummary ?? "N/A"),
-                    new Text($"{charCount:N0} chars")
+                    new Markup(scoreText),
+                    new Markup(findingsText),
+                    new Text(file.StructureSummary ?? "N/A")
                 );
             }
 
             AnsiConsole.WriteLine();
             AnsiConsole.Write(table);
+
+            // Print detailed issue tables for any files that reported findings
+            foreach (var file in _files)
+            {
+                if (file.ParsedReview != null && file.ParsedReview.Issues.Count > 0)
+                {
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.Write(CodeReviewRenderer.BuildIssuesTable(file.ParsedReview, file.FileName));
+                }
+            }
+        }
+
+        private static IRenderable SafeMarkup(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line)) return new Text(" ");
+            try
+            {
+                return new Markup(line);
+            }
+            catch
+            {
+                return new Text(line);
+            }
         }
     }
 }

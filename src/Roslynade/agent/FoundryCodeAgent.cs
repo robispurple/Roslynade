@@ -71,7 +71,28 @@ namespace Roslynade.agent
                 new()
                 {
                     Role = "system",
-                    Content = "You are an expert C# static analysis assistant. Review code for bugs, performance bottlenecks, modern C# idiom improvements, and null-safety issues."
+                    Content = """
+                    You are an expert C# static analysis engine.
+                    Review the given C# code for bugs, performance bottlenecks, modern C# idiom improvements, and null-safety issues.
+                    Respond ONLY with a valid JSON object matching this schema:
+                    {
+                      "summary": "Brief executive summary of code quality and key findings.",
+                      "overallScore": 85,
+                      "issues": [
+                        {
+                          "severity": "Error" | "Warning" | "Suggestion",
+                          "line": 12,
+                          "title": "Short title describing the issue",
+                          "description": "Clear explanation of why this is a problem and what should be done.",
+                          "suggestedFix": "Code snippet illustrating the fix (optional)"
+                        }
+                      ]
+                    }
+                    Rules:
+                    - overallScore must be an integer between 0 and 100.
+                    - severity must be one of: "Error", "Warning", "Suggestion".
+                    - Output raw valid JSON only. Do not include markdown code block formatting or explanations outside the JSON.
+                    """
                 },
                 new()
                 {
@@ -83,8 +104,6 @@ namespace Roslynade.agent
                     ```{Path.GetExtension(filePath).TrimStart('.')}
                     {code}
                     ```
-
-                    Provide concise, actionable recommendations with code snippets where applicable.
                     """
                 }
             };
@@ -96,6 +115,12 @@ namespace Roslynade.agent
                 if (!string.IsNullOrEmpty(content))
                 {
                     yield return content;
+                }
+
+                var finishReason = chunk.Choices?[0]?.FinishReason;
+                if (!string.IsNullOrEmpty(finishReason))
+                {
+                    break;
                 }
             }
         }

@@ -59,5 +59,5 @@ AnsiConsole.MarkupLine($"Discovered [green]{resolvedFiles.Count}[/] file(s) for 
 await using var agent = new FoundryCodeAgent(modelAlias: "qwen3.5-2b");
 await agent.InitializeAsync();
 
-var session = new AnalysisSession(agent, resolvedFiles, maxConcurrency: 2);
+var session = new AnalysisSession(agent, resolvedFiles, maxConcurrency: 1);
 await session.RunAsync();
