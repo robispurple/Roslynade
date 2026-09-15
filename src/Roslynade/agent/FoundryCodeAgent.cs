@@ -42,15 +42,29 @@ namespace Roslynade.agent
             _chatClient = await _model.GetChatClientAsync();
         }
 
-        public async Task AnalyzeAsync(string filePath)
+        public async Task AnalyzeAsync(string filePath, CancellationToken cancellationToken = default)
+        {
+            AnsiConsole.MarkupLine("[bold cyan]AI Analysis:[/]\n");
+            await foreach (var chunk in AnalyzeStreamAsync(filePath, null, cancellationToken))
+            {
+                Console.Write(chunk);
+            }
+            Console.WriteLine();
+        }
+
+        public async IAsyncEnumerable<string> AnalyzeStreamAsync(
+            string filePath,
+            Action<string>? onStructureSummary = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             if (_chatClient == null)
                 throw new InvalidOperationException("Agent must be initialized before analyzing.");
 
-            string code = await File.ReadAllTextAsync(filePath);
-            var syntaxTree = CSharpSyntaxTree.ParseText(code);
-            var root = await syntaxTree.GetRootAsync();
+            string code = await File.ReadAllTextAsync(filePath, cancellationToken);
+            var syntaxTree = CSharpSyntaxTree.ParseText(code, cancellationToken: cancellationToken);
+            var root = await syntaxTree.GetRootAsync(cancellationToken);
             string structureSummary = RoslynAnalyzer.Analyze(root);
+            onStructureSummary?.Invoke(structureSummary);
 
             var messages = new List<ChatMessage>
             {
@@ -75,19 +89,15 @@ namespace Roslynade.agent
                 }
             };
 
-            AnsiConsole.MarkupLine("[bold cyan]AI Analysis:[/]\n");
-
-            // Stream output directly to console
-            var streamingResponse = _chatClient.CompleteChatStreamingAsync(messages, CancellationToken.None);
-            await foreach (var chunk in streamingResponse)
+            var streamingResponse = _chatClient.CompleteChatStreamingAsync(messages, cancellationToken);
+            await foreach (var chunk in streamingResponse.WithCancellation(cancellationToken))
             {
                 var content = chunk.Choices?[0]?.Delta?.Content ?? chunk.Choices?[0]?.Message?.Content;
                 if (!string.IsNullOrEmpty(content))
                 {
-                    Console.Write(content);
+                    yield return content;
                 }
             }
-            Console.WriteLine();
         }
 
         public async ValueTask DisposeAsync()
