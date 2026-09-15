@@ -5,4 +5,7 @@
   <Folder Name="/src/">
     <Project Path="src/Roslynade/Roslynade.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Roslynade.Tests/Roslynade.Tests.csproj" />
+  </Folder>
 </Solution>
