@@ -257,6 +257,10 @@ namespace Roslynade
             var grid = new Grid().AddColumn();
 
             // 1. Build Tab Bar
+            var spinner = Spinner.Known.Dots;
+            int frameIndex = (int)((DateTime.UtcNow.Ticks / (TimeSpan.TicksPerMillisecond * 80)) % spinner.Frames.Count);
+            string spinnerChar = spinner.Frames[frameIndex];
+
             var tabBadges = new List<string>();
             for (int i = 0; i < _files.Count; i++)
             {
@@ -269,6 +273,10 @@ namespace Roslynade
                     AnalysisFileStatus.Analyzing => "~",
                     AnalysisFileStatus.Done => "OK",
                     AnalysisFileStatus.Error => "ERR",
+                    AnalysisFileStatus.Pending => "…",
+                    AnalysisFileStatus.Analyzing => spinnerChar,
+                    AnalysisFileStatus.Done => "✔",
+                    AnalysisFileStatus.Error => "✖",
                     _ => ""
                 };
 
@@ -372,6 +380,7 @@ namespace Roslynade
             {
                 AnalysisFileStatus.Pending => "Queued",
                 AnalysisFileStatus.Analyzing => "Analyzing (Streaming)",
+                AnalysisFileStatus.Analyzing => $"Analyzing {spinnerChar}",
                 AnalysisFileStatus.Done => "Analysis Complete",
                 AnalysisFileStatus.Error => "Error",
                 _ => ""
