@@ -269,10 +269,6 @@ namespace Roslynade
 
                 string statusText = file.Status switch
                 {
-                    AnalysisFileStatus.Pending => "...",
-                    AnalysisFileStatus.Analyzing => "~",
-                    AnalysisFileStatus.Done => "OK",
-                    AnalysisFileStatus.Error => "ERR",
                     AnalysisFileStatus.Pending => "…",
                     AnalysisFileStatus.Analyzing => spinnerChar,
                     AnalysisFileStatus.Done => "✔",
@@ -379,7 +375,6 @@ namespace Roslynade
             string statusDescription = activeFile.Status switch
             {
                 AnalysisFileStatus.Pending => "Queued",
-                AnalysisFileStatus.Analyzing => "Analyzing (Streaming)",
                 AnalysisFileStatus.Analyzing => $"Analyzing {spinnerChar}",
                 AnalysisFileStatus.Done => "Analysis Complete",
                 AnalysisFileStatus.Error => "Error",
