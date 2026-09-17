@@ -50,7 +50,12 @@ src/Roslynade/
 
 - **Windows 10 / 11** (`win-x64`) with DirectX 12 / DirectML capable GPU or NPU.
 - **.NET 10.0 SDK** (or later).
-- An internet connection on first execution to allow Foundry Local to download the model (`qwen3.5-2b`). Subsequent runs execute entirely offline.
+- **Microsoft Foundry Local CLI**:
+  ```bash
+  winget install Microsoft.FoundryLocal
+  ```
+  The Foundry CLI powers dynamic model polling and listing (`foundry model list`).
+- An internet connection when downloading a new model variant for the first time. Subsequent runs execute entirely offline.
 
 ---
 
@@ -74,17 +79,20 @@ dotnet build
 Pass one or more C# source files, wildcard patterns, or target directories:
 
 ```bash
-# Analyze specific files
+# Analyze specific files (opens interactive Spectre model selector)
 dotnet run --project src/Roslynade -- File1.cs File2.cs
 
-# Analyze a directory recursively (automatically excludes bin/, obj/, and .git/)
+# Analyze a directory recursively
 dotnet run --project src/Roslynade -- ./src
 
-# Analyze using wildcards
-dotnet run --project src/Roslynade -- "./src/Roslynade/*.cs"
+# Bypass the model selector by specifying a model directly
+dotnet run --project src/Roslynade -- ./src --model qwen2.5-coder-14b
 ```
 
-On initial run, Roslynade will initialize Microsoft AI Foundry Local and download the default `qwen3.5-2b` model if not already cached locally.
+When run interactively without `--model`, Roslynade dynamically queries `foundry model list` and presents a searchable Spectre.Console selector:
+- **`● [Downloaded]`**: Models already cached locally.
+- **`○ [Not Downloaded]`**: Models available in the catalog that will be downloaded on first run.
+- Display metadata including device target (GPU/CPU/NPU), model size, and task type.
 
 ---
 
