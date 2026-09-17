@@ -56,7 +56,7 @@ if (resolvedFiles.Count == 0)
 AnsiConsole.Write(new Rule("[yellow]Foundry Local C# Multi-File Analyzer[/]").LeftJustified());
 AnsiConsole.MarkupLine($"Discovered [green]{resolvedFiles.Count}[/] file(s) for analysis.\n");
 
-await using var agent = new FoundryCodeAgent(modelAlias: "qwen3.5-2b");
+await using var agent = new FoundryCodeAgent(modelAlias: "qwen2.5-coder-14b");
 await agent.InitializeAsync();
 
 var session = new AnalysisSession(agent, resolvedFiles, maxConcurrency: 1);
