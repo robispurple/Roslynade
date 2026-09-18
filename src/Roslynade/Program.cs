@@ -4,12 +4,33 @@ using Roslynade.Ui;
 using Spectre.Console;
 
 string? explicitModel = null;
+string? explicitDevice = null;
 var resolvedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
 for (int i = 0; i < args.Length; i++)
 {
     var arg = args[i];
 
+    if (arg.Equals("--gpu", StringComparison.OrdinalIgnoreCase))
+    {
+        explicitDevice = "GPU";
+        continue;
+    }
+    if (arg.Equals("--cpu", StringComparison.OrdinalIgnoreCase))
+    {
+        explicitDevice = "CPU";
+        continue;
+    }
+    if (arg.Equals("--device", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+    {
+        explicitDevice = args[++i];
+        continue;
+    }
+    if (arg.StartsWith("--device=", StringComparison.OrdinalIgnoreCase))
+    {
+        explicitDevice = arg.Substring("--device=".Length);
+        continue;
+    }
     if (arg.Equals("--model", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
     {
         explicitModel = args[++i];
@@ -61,11 +82,13 @@ for (int i = 0; i < args.Length; i++)
 
 if (resolvedFiles.Count == 0)
 {
-    AnsiConsole.MarkupLine("[red]Usage:[/] dotnet run -- <csharp-files-or-directories...> [[--model <model-alias>]]");
+    AnsiConsole.MarkupLine("[red]Usage:[/] dotnet run -- <csharp-files-or-directories...> [[--model <model-alias>]] [[--device <gpu|cpu>]] [[--gpu|--cpu]]");
     AnsiConsole.MarkupLine("[grey]Examples:[/]");
     AnsiConsole.MarkupLine("  dotnet run -- File1.cs File2.cs");
     AnsiConsole.MarkupLine("  dotnet run -- ./src");
     AnsiConsole.MarkupLine("  dotnet run -- ./src --model qwen2.5-coder-14b");
+    AnsiConsole.MarkupLine("  dotnet run -- ./src --device cpu");
+    AnsiConsole.MarkupLine("  dotnet run -- ./src --gpu");
     return;
 }
 
@@ -91,7 +114,11 @@ else
     }
 }
 
-await using var agent = new FoundryCodeAgent(modelAlias: selectedModel);
+string selectedDevice = ModelSelectorUi.SelectDevice(explicitDevice);
+bool preferGpu = selectedDevice.Equals("GPU", StringComparison.OrdinalIgnoreCase);
+AnsiConsole.MarkupLine($"Using compute device: [bold cyan]{selectedDevice}[/]\n");
+
+await using var agent = new FoundryCodeAgent(modelAlias: selectedModel, preferGpu: preferGpu);
 await agent.InitializeAsync();
 
 var session = new AnalysisSession(agent, resolvedFiles, maxConcurrency: 1);
