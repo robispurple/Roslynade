@@ -123,5 +123,32 @@ namespace Roslynade.Tests
             Assert.NotNull(m3);
             Assert.NotNull(m4);
         }
+
+        [Fact]
+        public void FoundryCodeAgent_DefaultsToGpuPreference()
+        {
+            var agent = new Roslynade.agent.FoundryCodeAgent();
+            Assert.NotNull(agent);
+        }
+
+        [Theory]
+        [InlineData("gpu", "GPU")]
+        [InlineData("GPU", "GPU")]
+        [InlineData("cpu", "CPU")]
+        [InlineData("CPU", "CPU")]
+        [InlineData("Cpu", "CPU")]
+        [InlineData("Gpu", "GPU")]
+        public void SelectDevice_WithExplicitParameter_ReturnsNormalizedSelection(string input, string expected)
+        {
+            var result = Roslynade.Ui.ModelSelectorUi.SelectDevice(input);
+            Assert.Equal(expected, result);
+        }
+
+        [Fact]
+        public void SelectDevice_NonInteractiveNullInput_DefaultsToGpu()
+        {
+            var result = Roslynade.Ui.ModelSelectorUi.SelectDevice(null);
+            Assert.Equal("GPU", result);
+        }
     }
 }
