@@ -6,38 +6,98 @@ using Spectre.Console;
 
 namespace Roslynade.agent
 {
-    public class FoundryCodeAgent(string modelAlias = "qwen3.5-2b") : IAsyncDisposable
+    public class FoundryCodeAgent(string modelAlias = "qwen3.5-2b", bool preferGpu = true) : IAsyncDisposable
     {
         private readonly string _modelAlias = modelAlias;
+        private readonly bool _preferGpu = preferGpu;
         private IModel? _model;
         private OpenAIChatClient? _chatClient;
 
         public async Task InitializeAsync()
         {
-            // 1. Initialize Foundry Local runtime singleton
+            // 1. Initialize Foundry Local runtime singleton pointing to global .foundry cache
             if (!FoundryLocalManager.IsInitialized)
             {
+                string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                string globalFoundryDir = Path.Combine(userProfile, ".foundry");
+                string globalModelCache = Path.Combine(globalFoundryDir, "cache", "models");
+
                 await FoundryLocalManager.CreateAsync(
-                    new Configuration { AppName = "CodeAgent" },
+                    new Configuration
+                    {
+                        AppName = "foundry",
+                        AppDataDir = globalFoundryDir,
+                        ModelCacheDir = globalModelCache
+                    },
                     NullLogger.Instance);
             }
 
             var manager = FoundryLocalManager.Instance;
+
+            // 2. Download and register hardware Execution Providers (e.g. WebGPU for AMD/generic GPUs)
+            if (_preferGpu)
+            {
+                try
+                {
+                    await AnsiConsole.Status().StartAsync("Registering hardware Execution Providers...", async ctx =>
+                    {
+                        await manager.DownloadAndRegisterEpsAsync();
+                    });
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]Notice:[/] Could not download/register additional execution providers: [grey]{Markup.Escape(ex.Message)}[/]");
+                }
+            }
+
             var catalog = await manager.GetCatalogAsync();
 
-            // 2. Fetch and download the model variant optimized for your hardware
+            // 3. Fetch and resolve the model variant (preferring GPU when available)
             _model = await catalog.GetModelAsync(_modelAlias)
                 ?? throw new InvalidOperationException($"Model '{_modelAlias}' not found in catalog.");
 
-            await AnsiConsole.Status().StartAsync("Checking/Downloading model...", async ctx =>
+            if (_preferGpu)
+            {
+                if (_model.Info?.Runtime?.DeviceType != DeviceType.GPU)
+                {
+                    var gpuVariant = _model.Variants?.FirstOrDefault(v =>
+                        v.Info?.Runtime?.DeviceType == DeviceType.GPU ||
+                        v.Id.Contains("gpu", StringComparison.OrdinalIgnoreCase));
+
+                    if (gpuVariant != null)
+                    {
+                        _model = gpuVariant;
+                    }
+                }
+            }
+            else
+            {
+                if (_model.Info?.Runtime?.DeviceType != DeviceType.CPU)
+                {
+                    var cpuVariant = _model.Variants?.FirstOrDefault(v =>
+                        v.Info?.Runtime?.DeviceType == DeviceType.CPU ||
+                        v.Id.Contains("cpu", StringComparison.OrdinalIgnoreCase));
+
+                    if (cpuVariant != null)
+                    {
+                        _model = cpuVariant;
+                    }
+                }
+            }
+
+            string targetDevice = _model.Info?.Runtime?.DeviceType.ToString() ?? "Unknown";
+            string targetEp = _model.Info?.Runtime?.ExecutionProvider ?? "Default";
+            AnsiConsole.MarkupLine($"[grey]Hardware Target:[/] [bold cyan]{targetDevice}[/] [grey]({targetEp})[/] [grey]for[/] [bold white]{Markup.Escape(_model.Id)}[/]\n");
+
+            await AnsiConsole.Status().StartAsync($"Checking/Downloading {_model.Alias}...", async ctx =>
             {
                 await _model.DownloadAsync(progress =>
                 {
-                    ctx.Status($"Downloading {_modelAlias}: {progress:F1}%");
+                    ctx.Status($"Downloading {_model.Alias} ({targetDevice}): {progress:F1}%");
                 });
             });
 
-            // 3. Load model into memory/VRAM
+            // 4. Load model into memory/VRAM
             await _model.LoadAsync();
             _chatClient = await _model.GetChatClientAsync();
         }
