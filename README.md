@@ -79,7 +79,7 @@ dotnet build
 Pass one or more C# source files, wildcard patterns, or target directories:
 
 ```bash
-# Analyze specific files (opens interactive Spectre model selector)
+# Analyze specific files (opens interactive Spectre model and hardware selectors)
 dotnet run --project src/Roslynade -- File1.cs File2.cs
 
 # Analyze a directory recursively
@@ -87,12 +87,16 @@ dotnet run --project src/Roslynade -- ./src
 
 # Bypass the model selector by specifying a model directly
 dotnet run --project src/Roslynade -- ./src --model qwen2.5-coder-14b
+
+# Force GPU or CPU compute hardware explicitly
+dotnet run --project src/Roslynade -- ./src --gpu
+dotnet run --project src/Roslynade -- ./src --cpu
+dotnet run --project src/Roslynade -- ./src --device gpu
 ```
 
-When run interactively without `--model`, Roslynade dynamically queries `foundry model list` and presents a searchable Spectre.Console selector:
-- **`● [Downloaded]`**: Models already cached locally.
-- **`○ [Not Downloaded]`**: Models available in the catalog that will be downloaded on first run.
-- Display metadata including device target (GPU/CPU/NPU), model size, and task type.
+When run interactively without `--model` or `--device`, Roslynade presents:
+1. A searchable Spectre.Console model selector with downloaded status and hardware metadata.
+2. A hardware selection prompt allowing you to choose between **GPU (Hardware Accelerated)** and **CPU (System Processor)**.
 
 ---
 
