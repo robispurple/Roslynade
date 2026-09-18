@@ -199,5 +199,29 @@ namespace Roslynade.Ui
 
             return new FallbackResult(FallbackActionType.Exit);
         }
+
+        public static string SelectDevice(string? explicitDevice = null)
+        {
+            if (!string.IsNullOrWhiteSpace(explicitDevice))
+            {
+                return explicitDevice.Equals("cpu", StringComparison.OrdinalIgnoreCase) ? "CPU" : "GPU";
+            }
+
+            bool isInteractive = AnsiConsole.Profile.Capabilities.Interactive && !Console.IsInputRedirected;
+            if (!isInteractive)
+            {
+                return "GPU";
+            }
+
+            var prompt = new SelectionPrompt<string>()
+                .Title("[bold yellow]Select compute hardware target:[/]")
+                .AddChoices(
+                    "GPU (Hardware Accelerated - Recommended)",
+                    "CPU (System Processor)"
+                );
+
+            var choice = AnsiConsole.Prompt(prompt);
+            return choice.StartsWith("GPU", StringComparison.OrdinalIgnoreCase) ? "GPU" : "CPU";
+        }
     }
 }
