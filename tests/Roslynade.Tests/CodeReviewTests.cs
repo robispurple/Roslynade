@@ -262,6 +262,36 @@ namespace Roslynade.Tests
       Assert.Single(result.Issues);
       Assert.Equal(expected, result.Issues[0].Severity);
     }
+
+    [Fact]
+    public void ExtractJson_EmptyOrWhitespace_ReturnsEmpty()
+    {
+      Assert.Equal(string.Empty, CodeReviewParser.ExtractJson(""));
+      Assert.Equal(string.Empty, CodeReviewParser.ExtractJson("   \t\r\n  "));
+    }
+
+    [Fact]
+    public void ExtractJson_UnclosedMarkdownFence_ExtractsJsonCorrectly()
+    {
+      string unclosed = "```json\n{\"summary\":\"WIP analysis\",\"overallScore\":90,\"issues\":[]}";
+      string extracted = CodeReviewParser.ExtractJson(unclosed);
+      Assert.Equal("{\"summary\":\"WIP analysis\",\"overallScore\":90,\"issues\":[]}", extracted);
+
+      bool parsed = CodeReviewParser.TryParse(unclosed, out var result);
+      Assert.True(parsed);
+      Assert.NotNull(result);
+      Assert.Equal("WIP analysis", result.Summary);
+    }
+
+    [Fact]
+    public void TryParse_NullOrWhitespace_ReturnsFalse()
+    {
+      Assert.False(CodeReviewParser.TryParse(null!, out var result1));
+      Assert.Null(result1);
+
+      Assert.False(CodeReviewParser.TryParse("   ", out var result2));
+      Assert.Null(result2);
+    }
   }
 }
 

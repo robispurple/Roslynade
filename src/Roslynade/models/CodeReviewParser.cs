@@ -1,18 +1,22 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace Roslynade.Models
 {
-    public static class CodeReviewParser
+    public static partial class CodeReviewParser
     {
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
             PropertyNameCaseInsensitive = true,
             AllowTrailingCommas = true,
             ReadCommentHandling = JsonCommentHandling.Skip,
-            NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
+            NumberHandling = JsonNumberHandling.AllowReadingFromString
         };
+
+        [GeneratedRegex(@"```(?:json)?\s*", RegexOptions.IgnoreCase)]
+        private static partial Regex JsonFenceRegex();
 
         public static bool TryParse(string rawContent, [NotNullWhen(true)] out CodeReviewResult? result)
         {
@@ -28,7 +32,11 @@ namespace Roslynade.Models
                 result = JsonSerializer.Deserialize<CodeReviewResult>(cleanJson, JsonOptions);
                 return result != null && !string.IsNullOrWhiteSpace(result.Summary);
             }
-            catch
+            catch (JsonException)
+            {
+                return false;
+            }
+            catch (FormatException)
             {
                 return false;
             }
@@ -36,43 +44,52 @@ namespace Roslynade.Models
 
         public static string ExtractJson(string raw)
         {
-            string trimmed = raw.Trim();
-
-            // 1. If already a JSON object starting with '{' and ending with '}', return as-is
-            if (trimmed.StartsWith('{') && trimmed.EndsWith('}'))
+            if (string.IsNullOrWhiteSpace(raw))
             {
-                return trimmed;
+                return string.Empty;
             }
 
-            int firstBrace = trimmed.IndexOf('{');
-            int lastBrace = trimmed.LastIndexOf('}');
+            ReadOnlySpan<char> span = raw.AsSpan().Trim();
+
+            // 1. If already a JSON object starting with '{' and ending with '}', return as-is
+            if (span.StartsWith("{") && span.EndsWith("}"))
+            {
+                return span.ToString();
+            }
+
+            int firstBrace = span.IndexOf('{');
+            int lastBrace = span.LastIndexOf('}');
 
             // 2. Check for markdown code fence ```json ... that starts before '{'
-            var match = Regex.Match(trimmed, @"```(?:json)?\s*", RegexOptions.IgnoreCase);
-            if (match.Success && (firstBrace < 0 || match.Index < firstBrace))
+            var enumerator = JsonFenceRegex().EnumerateMatches(span);
+            if (enumerator.MoveNext())
             {
-                int contentStart = match.Index + match.Length;
-                int lastFence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
-                if (lastFence > contentStart)
+                var match = enumerator.Current;
+                if (firstBrace < 0 || match.Index < firstBrace)
                 {
-                    trimmed = trimmed.Substring(contentStart, lastFence - contentStart).Trim();
-                }
-                else
-                {
-                    trimmed = trimmed.Substring(contentStart).Trim();
-                }
+                    int contentStart = match.Index + match.Length;
+                    int lastFence = span.LastIndexOf("```");
+                    if (lastFence > contentStart)
+                    {
+                        span = span.Slice(contentStart, lastFence - contentStart).Trim();
+                    }
+                    else
+                    {
+                        span = span.Slice(contentStart).Trim();
+                    }
 
-                firstBrace = trimmed.IndexOf('{');
-                lastBrace = trimmed.LastIndexOf('}');
+                    firstBrace = span.IndexOf('{');
+                    lastBrace = span.LastIndexOf('}');
+                }
             }
 
             // 3. Extract substring between first '{' and last '}'
             if (firstBrace >= 0 && lastBrace > firstBrace)
             {
-                return trimmed.Substring(firstBrace, lastBrace - firstBrace + 1);
+                return span.Slice(firstBrace, lastBrace - firstBrace + 1).ToString();
             }
 
-            return trimmed;
+            return span.ToString();
         }
     }
 }
