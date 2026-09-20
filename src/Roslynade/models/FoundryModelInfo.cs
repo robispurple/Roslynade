@@ -2,40 +2,40 @@ using System.Text.Json.Serialization;
 
 namespace Roslynade.Models
 {
-    public class FoundryModelCatalogResponse
+    public record FoundryModelCatalogResponse
     {
         [JsonPropertyName("models")]
-        public List<FoundryModelInfo> Models { get; set; } = new();
+        public List<FoundryModelInfo> Models { get; init; } = [];
     }
 
-    public class FoundryModelInfo
+    public record FoundryModelInfo
     {
         [JsonPropertyName("alias")]
-        public string Alias { get; set; } = string.Empty;
+        public string Alias { get; init; } = string.Empty;
 
         [JsonPropertyName("id")]
-        public string Id { get; set; } = string.Empty;
+        public string Id { get; init; } = string.Empty;
 
         [JsonPropertyName("displayName")]
-        public string DisplayName { get; set; } = string.Empty;
+        public string DisplayName { get; init; } = string.Empty;
 
         [JsonPropertyName("type")]
-        public string Type { get; set; } = string.Empty;
+        public string Type { get; init; } = string.Empty;
 
         [JsonPropertyName("device")]
-        public string Device { get; set; } = string.Empty;
+        public string Device { get; init; } = string.Empty;
 
         [JsonPropertyName("fileSizeMb")]
-        public long FileSizeMb { get; set; }
+        public long FileSizeMb { get; init; }
 
         [JsonPropertyName("cached")]
-        public bool Cached { get; set; }
+        public bool Cached { get; init; }
 
         [JsonPropertyName("license")]
-        public string? License { get; set; }
+        public string? License { get; init; }
 
         [JsonPropertyName("supportsToolCalling")]
-        public bool SupportsToolCalling { get; set; }
+        public bool SupportsToolCalling { get; init; }
 
         public string FormattedSize => FileSizeMb >= 1024
             ? $"{FileSizeMb / 1024.0:F1} GB"
