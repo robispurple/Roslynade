@@ -122,7 +122,7 @@ namespace Roslynade.agent
 
             var options = new ChatOptions
             {
-                MaxOutputTokens = 1500
+                MaxOutputTokens = 8000
             };
 
             var buffer = new StringBuilder();

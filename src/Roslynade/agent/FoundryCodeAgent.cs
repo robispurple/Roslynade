@@ -138,7 +138,7 @@ namespace Roslynade.agent
             {
                 Search = new SearchOptions
                 {
-                    MaxOutputTokens = 1500
+                    MaxOutputTokens = 8000
                 }
             });
 

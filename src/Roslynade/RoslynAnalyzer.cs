@@ -5,11 +5,32 @@ namespace Roslynade
 {
     public static class RoslynAnalyzer
     {
-        public static string Analyze(SyntaxNode root)
+        public static string Analyze(SyntaxNode? root)
         {
-            int classCount = root.DescendantNodes().OfType<ClassDeclarationSyntax>().Count();
-            int methodCount = root.DescendantNodes().OfType<MethodDeclarationSyntax>().Count();
-            int recordCount = root.DescendantNodes().OfType<RecordDeclarationSyntax>().Count();
+            if (root is null)
+            {
+                return "No syntax tree provided.";
+            }
+
+            int classCount = 0;
+            int methodCount = 0;
+            int recordCount = 0;
+
+            foreach (var node in root.DescendantNodes())
+            {
+                switch (node)
+                {
+                    case ClassDeclarationSyntax:
+                        classCount++;
+                        break;
+                    case MethodDeclarationSyntax:
+                        methodCount++;
+                        break;
+                    case RecordDeclarationSyntax:
+                        recordCount++;
+                        break;
+                }
+            }
 
             return $"File contains {classCount} class(es), {recordCount} record(s), and {methodCount} method(s).";
         }
