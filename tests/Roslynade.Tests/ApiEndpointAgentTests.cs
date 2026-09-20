@@ -167,5 +167,16 @@ namespace Roslynade.Tests
             var session = new AnalysisSession(agent, new[] { "FakeFile.cs" }, maxConcurrency: 1);
             Assert.NotNull(session);
         }
+
+        [Fact]
+        public void ApiEndpointCodeAgent_InheritsBaseCodeAnalysisAgent_AndHasDefaultMaxTokens()
+        {
+            var agent = new ApiEndpointCodeAgent("https://api.openai.com/v1", "gpt-4o");
+            Assert.IsAssignableFrom<BaseCodeAnalysisAgent>(agent);
+            Assert.Equal(8000, agent.MaxOutputTokens);
+
+            agent.MaxOutputTokens = 4096;
+            Assert.Equal(4096, agent.MaxOutputTokens);
+        }
     }
 }

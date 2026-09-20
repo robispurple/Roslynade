@@ -6,14 +6,14 @@ using Spectre.Console;
 
 namespace Roslynade.agent
 {
-    public class FoundryCodeAgent(string modelAlias = "qwen3.5-2b", bool preferGpu = true) : ICodeAnalysisAgent
+    public class FoundryCodeAgent(string modelAlias = "qwen3.5-2b", bool preferGpu = true) : BaseCodeAnalysisAgent
     {
         private readonly string _modelAlias = modelAlias;
         private readonly bool _preferGpu = preferGpu;
         private IModel? _model;
         private ChatSession? _chatSession;
 
-        public async Task InitializeAsync()
+        public override async Task InitializeAsync()
         {
             // 1. Initialize Foundry Local runtime singleton pointing to global .foundry cache
             if (!FoundryLocalManager.IsInitialized)
@@ -106,20 +106,16 @@ namespace Roslynade.agent
             _chatSession.SetStreaming(true);
         }
 
-        public async Task AnalyzeAsync(string filePath, CancellationToken cancellationToken = default)
+        protected override void EnsureInitialized()
         {
-            AnsiConsole.MarkupLine("[bold cyan]AI Analysis:[/]\n");
-            await foreach (var chunk in AnalyzeStreamAsync(filePath, null, cancellationToken))
-            {
-                Console.Write(chunk);
-            }
-            Console.WriteLine();
+            if (_model == null)
+                throw new InvalidOperationException("Agent must be initialized before analyzing.");
         }
 
-        public async IAsyncEnumerable<string> AnalyzeStreamAsync(
-            string filePath,
-            Action<string>? onStructureSummary = null,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        protected override async IAsyncEnumerable<string> GenerateStreamAsync(
+            string systemPrompt,
+            string userPrompt,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
             if (_model == null)
                 throw new InvalidOperationException("Agent must be initialized before analyzing.");
@@ -127,43 +123,29 @@ namespace Roslynade.agent
             using var session = new ChatSession(_model);
             session.SetStreaming(true);
 
-            string code = await File.ReadAllTextAsync(filePath, cancellationToken);
-            var syntaxTree = CSharpSyntaxTree.ParseText(code, cancellationToken: cancellationToken);
-            var root = await syntaxTree.GetRootAsync(cancellationToken);
-            string structureSummary = RoslynAnalyzer.Analyze(root);
-            onStructureSummary?.Invoke(structureSummary);
-
             using var request = new Request();
             request.SetOptions(new RequestOptions
             {
                 Search = new SearchOptions
                 {
-                    MaxOutputTokens = 8000
+                    MaxOutputTokens = MaxOutputTokens
                 }
             });
 
-            request.AddItem(new MessageItem(MessageRole.System, CodeReviewPrompts.SystemPrompt));
-            request.AddItem(new MessageItem(MessageRole.User, CodeReviewPrompts.BuildUserPrompt(structureSummary, Path.GetExtension(filePath), code)));
+            request.AddItem(new MessageItem(MessageRole.System, systemPrompt));
+            request.AddItem(new MessageItem(MessageRole.User, userPrompt));
 
-            var buffer = new System.Text.StringBuilder();
             await using var streamingResponse = session.ProcessStreamingRequestAsync(request, cancellationToken);
             await foreach (var item in streamingResponse.WithCancellation(cancellationToken))
             {
                 if (item is TextItem textItem && !string.IsNullOrEmpty(textItem.Text))
                 {
                     yield return textItem.Text;
-                    buffer.Append(textItem.Text);
-
-                    if ((textItem.Text.Contains('}') || textItem.Text.Contains('`') || buffer.Length > 200) &&
-                        CodeReviewParser.TryParse(buffer.ToString(), out _))
-                    {
-                        yield break;
-                    }
                 }
             }
         }
 
-        public async ValueTask DisposeAsync()
+        public override async ValueTask DisposeAsync()
         {
             _chatSession?.Dispose();
             if (_model != null)

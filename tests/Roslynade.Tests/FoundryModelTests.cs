@@ -129,6 +129,8 @@ namespace Roslynade.Tests
         {
             var agent = new Roslynade.agent.FoundryCodeAgent();
             Assert.NotNull(agent);
+            Assert.IsAssignableFrom<Roslynade.agent.BaseCodeAnalysisAgent>(agent);
+            Assert.Equal(8000, agent.MaxOutputTokens);
         }
 
         [Theory]

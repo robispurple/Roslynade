@@ -9,7 +9,7 @@ using Spectre.Console;
 
 namespace Roslynade.agent
 {
-    public class ApiEndpointCodeAgent : ICodeAnalysisAgent
+    public class ApiEndpointCodeAgent : BaseCodeAnalysisAgent
     {
         private readonly string _endpoint;
         private readonly string _modelName;
@@ -46,7 +46,7 @@ namespace Roslynade.agent
         public string Endpoint => _endpoint;
         public string ModelName => _modelName;
 
-        public Task InitializeAsync()
+        public override Task InitializeAsync()
         {
             if (_chatClient != null)
             {
@@ -90,59 +90,43 @@ namespace Roslynade.agent
             return "not-needed";
         }
 
-        public async Task AnalyzeAsync(string filePath, CancellationToken cancellationToken = default)
+        protected override string AgentDisplayName => "AI Analysis (Remote API)";
+
+        protected override void EnsureInitialized()
         {
-            AnsiConsole.MarkupLine("[bold cyan]AI Analysis (Remote API):[/]\n");
-            await foreach (var chunk in AnalyzeStreamAsync(filePath, null, cancellationToken))
-            {
-                Console.Write(chunk);
-            }
-            Console.WriteLine();
+            if (_chatClient == null)
+                throw new InvalidOperationException("Agent must be initialized before analyzing.");
         }
 
-        public async IAsyncEnumerable<string> AnalyzeStreamAsync(
-            string filePath,
-            Action<string>? onStructureSummary = null,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        protected override async IAsyncEnumerable<string> GenerateStreamAsync(
+            string systemPrompt,
+            string userPrompt,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             if (_chatClient == null)
                 throw new InvalidOperationException("Agent must be initialized before analyzing.");
 
-            string code = await File.ReadAllTextAsync(filePath, cancellationToken);
-            var syntaxTree = CSharpSyntaxTree.ParseText(code, cancellationToken: cancellationToken);
-            var root = await syntaxTree.GetRootAsync(cancellationToken);
-            string structureSummary = RoslynAnalyzer.Analyze(root);
-            onStructureSummary?.Invoke(structureSummary);
-
             var messages = new List<ChatMessage>
             {
-                new(ChatRole.System, CodeReviewPrompts.SystemPrompt),
-                new(ChatRole.User, CodeReviewPrompts.BuildUserPrompt(structureSummary, Path.GetExtension(filePath), code))
+                new(ChatRole.System, systemPrompt),
+                new(ChatRole.User, userPrompt)
             };
 
             var options = new ChatOptions
             {
-                MaxOutputTokens = 8000
+                MaxOutputTokens = MaxOutputTokens
             };
 
-            var buffer = new StringBuilder();
             await foreach (var update in _chatClient.GetStreamingResponseAsync(messages, options, cancellationToken))
             {
                 if (!string.IsNullOrEmpty(update.Text))
                 {
                     yield return update.Text;
-                    buffer.Append(update.Text);
-
-                    if ((update.Text.Contains('}') || update.Text.Contains('`') || buffer.Length > 200) &&
-                        CodeReviewParser.TryParse(buffer.ToString(), out _))
-                    {
-                        yield break;
-                    }
                 }
             }
         }
 
-        public ValueTask DisposeAsync()
+        public override ValueTask DisposeAsync()
         {
             if (_ownsClient && _chatClient != null)
             {
