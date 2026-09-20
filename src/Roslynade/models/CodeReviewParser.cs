@@ -42,7 +42,7 @@ namespace Roslynade.Models
             }
         }
 
-        public static string ExtractJson(string raw)
+        public static string ExtractJson(string? raw)
         {
             if (string.IsNullOrWhiteSpace(raw))
             {

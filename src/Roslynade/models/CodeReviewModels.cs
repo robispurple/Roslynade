@@ -23,12 +23,19 @@ namespace Roslynade.Models
                     return Severity.Suggestion;
                 }
 
-                return str.Trim().ToLowerInvariant() switch
+                ReadOnlySpan<char> span = str.AsSpan().Trim();
+                if (span.Equals("error", StringComparison.OrdinalIgnoreCase))
                 {
-                    "error" => Severity.Error,
-                    "warning" or "warn" => Severity.Warning,
-                    _ => Severity.Suggestion
-                };
+                    return Severity.Error;
+                }
+
+                if (span.Equals("warning", StringComparison.OrdinalIgnoreCase) ||
+                    span.Equals("warn", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Severity.Warning;
+                }
+
+                return Severity.Suggestion;
             }
 
             if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out int intVal))

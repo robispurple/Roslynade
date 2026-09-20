@@ -266,6 +266,7 @@ namespace Roslynade.Tests
     [Fact]
     public void ExtractJson_EmptyOrWhitespace_ReturnsEmpty()
     {
+      Assert.Equal(string.Empty, CodeReviewParser.ExtractJson(null));
       Assert.Equal(string.Empty, CodeReviewParser.ExtractJson(""));
       Assert.Equal(string.Empty, CodeReviewParser.ExtractJson("   \t\r\n  "));
     }
