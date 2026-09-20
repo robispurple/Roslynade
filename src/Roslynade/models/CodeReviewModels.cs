@@ -11,7 +11,7 @@ namespace Roslynade.Models
         public int OverallScore { get; init; } = 100;
 
         [JsonPropertyName("issues")]
-        public List<CodeIssue> Issues { get; init; } = new();
+        public IReadOnlyList<CodeIssue> Issues { get; init; } = [];
     }
 
     public record CodeIssue
