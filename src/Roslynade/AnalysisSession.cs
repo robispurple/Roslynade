@@ -3,6 +3,7 @@ using System.Text;
 using Roslynade.agent;
 using Roslynade.Models;
 using Roslynade.Rendering;
+using Roslynade.Services;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
@@ -36,6 +37,8 @@ namespace Roslynade
         private readonly List<FileAnalysisState> _files;
         private readonly int _maxConcurrency;
         private int _activeTabIndex;
+        private DateTime _lastCopiedTime = DateTime.MinValue;
+        private string? _lastCopiedMessage;
 
         public AnalysisSession(ICodeAnalysisAgent agent, IEnumerable<string> filePaths, int maxConcurrency = 2)
         {
@@ -136,90 +139,113 @@ namespace Roslynade
 
             var allTasks = Task.WhenAll(workerTasks);
 
-            await AnsiConsole.Live(BuildView())
-                .AutoClear(false)
-                .StartAsync(async ctx =>
-                {
-                    while (!cts.IsCancellationRequested)
+            bool originalTreatControlC = false;
+            try
+            {
+                originalTreatControlC = Console.TreatControlCAsInput;
+                Console.TreatControlCAsInput = true;
+            }
+            catch { }
+
+            try
+            {
+                await AnsiConsole.Live(BuildView())
+                    .AutoClear(false)
+                    .StartAsync(async ctx =>
                     {
-                        // Handle user keyboard navigation
-                        while (Console.KeyAvailable)
+                        while (!cts.IsCancellationRequested)
                         {
-                            var keyInfo = Console.ReadKey(intercept: true);
-                            var currentFile = _files[_activeTabIndex];
+                            // Handle user keyboard navigation
+                            while (Console.KeyAvailable)
+                            {
+                                var keyInfo = Console.ReadKey(intercept: true);
+                                var currentFile = _files[_activeTabIndex];
 
-                            int currentWindowHeight = 25;
-                            try { currentWindowHeight = Console.WindowHeight; } catch { }
-                            if (currentWindowHeight <= 0) currentWindowHeight = 25;
-                            int curViewportHeight = Math.Max(5, currentWindowHeight - 7);
+                                int currentWindowHeight = 25;
+                                try { currentWindowHeight = Console.WindowHeight; } catch { }
+                                if (currentWindowHeight <= 0) currentWindowHeight = 25;
+                                int curViewportHeight = Math.Max(5, currentWindowHeight - 7);
 
-                            if (keyInfo.Key is ConsoleKey.RightArrow or ConsoleKey.Tab)
-                            {
-                                _activeTabIndex = (_activeTabIndex + 1) % _files.Count;
+                                if (keyInfo.Key is ConsoleKey.RightArrow or ConsoleKey.Tab)
+                                {
+                                    _activeTabIndex = (_activeTabIndex + 1) % _files.Count;
+                                }
+                                else if (keyInfo.Key == ConsoleKey.LeftArrow)
+                                {
+                                    _activeTabIndex = (_activeTabIndex - 1 + _files.Count) % _files.Count;
+                                }
+                                else if (keyInfo.Key >= ConsoleKey.D1 && keyInfo.Key < ConsoleKey.D1 + Math.Min(9, _files.Count))
+                                {
+                                    _activeTabIndex = keyInfo.Key - ConsoleKey.D1;
+                                }
+                                else if (keyInfo.Key == ConsoleKey.UpArrow)
+                                {
+                                    currentFile.AutoScroll = false;
+                                    currentFile.ScrollOffset = Math.Max(0, currentFile.ScrollOffset - 1);
+                                }
+                                else if (keyInfo.Key == ConsoleKey.DownArrow)
+                                {
+                                    currentFile.ScrollOffset++;
+                                }
+                                else if (keyInfo.Key == ConsoleKey.PageUp)
+                                {
+                                    currentFile.AutoScroll = false;
+                                    currentFile.ScrollOffset = Math.Max(0, currentFile.ScrollOffset - Math.Max(1, curViewportHeight - 2));
+                                }
+                                else if (keyInfo.Key == ConsoleKey.PageDown)
+                                {
+                                    currentFile.ScrollOffset += Math.Max(1, curViewportHeight - 2);
+                                }
+                                else if (keyInfo.Key == ConsoleKey.Home)
+                                {
+                                    currentFile.AutoScroll = false;
+                                    currentFile.ScrollOffset = 0;
+                                }
+                                else if (keyInfo.Key == ConsoleKey.End)
+                                {
+                                    currentFile.AutoScroll = true;
+                                }
+                                else if (keyInfo.Key == ConsoleKey.C)
+                                {
+                                    CopyActiveTabToClipboard(currentFile);
+                                }
+                                else if (keyInfo.Key is ConsoleKey.Q or ConsoleKey.Escape)
+                                {
+                                    cts.Cancel();
+                                    break;
+                                }
+                                else if (keyInfo.Key == ConsoleKey.Enter && allTasks.IsCompleted)
+                                {
+                                    return;
+                                }
                             }
-                            else if (keyInfo.Key == ConsoleKey.LeftArrow)
+
+                            ctx.UpdateTarget(BuildView());
+                            ctx.Refresh();
+
+                            if (allTasks.IsCompleted)
                             {
-                                _activeTabIndex = (_activeTabIndex - 1 + _files.Count) % _files.Count;
+                                // If user is done or all are finished, allow viewing or exit on Enter/Q
+                                if (!Console.KeyAvailable)
+                                {
+                                    await Task.Delay(100, CancellationToken.None);
+                                }
                             }
-                            else if (keyInfo.Key >= ConsoleKey.D1 && keyInfo.Key < ConsoleKey.D1 + Math.Min(9, _files.Count))
+                            else
                             {
-                                _activeTabIndex = keyInfo.Key - ConsoleKey.D1;
-                            }
-                            else if (keyInfo.Key == ConsoleKey.UpArrow)
-                            {
-                                currentFile.AutoScroll = false;
-                                currentFile.ScrollOffset = Math.Max(0, currentFile.ScrollOffset - 1);
-                            }
-                            else if (keyInfo.Key == ConsoleKey.DownArrow)
-                            {
-                                currentFile.ScrollOffset++;
-                            }
-                            else if (keyInfo.Key == ConsoleKey.PageUp)
-                            {
-                                currentFile.AutoScroll = false;
-                                currentFile.ScrollOffset = Math.Max(0, currentFile.ScrollOffset - Math.Max(1, curViewportHeight - 2));
-                            }
-                            else if (keyInfo.Key == ConsoleKey.PageDown)
-                            {
-                                currentFile.ScrollOffset += Math.Max(1, curViewportHeight - 2);
-                            }
-                            else if (keyInfo.Key == ConsoleKey.Home)
-                            {
-                                currentFile.AutoScroll = false;
-                                currentFile.ScrollOffset = 0;
-                            }
-                            else if (keyInfo.Key == ConsoleKey.End)
-                            {
-                                currentFile.AutoScroll = true;
-                            }
-                            else if (keyInfo.Key is ConsoleKey.Q or ConsoleKey.Escape)
-                            {
-                                cts.Cancel();
-                                break;
-                            }
-                            else if (keyInfo.Key == ConsoleKey.Enter && allTasks.IsCompleted)
-                            {
-                                return;
+                                await Task.Delay(40, CancellationToken.None);
                             }
                         }
-
-                        ctx.UpdateTarget(BuildView());
-                        ctx.Refresh();
-
-                        if (allTasks.IsCompleted)
-                        {
-                            // If user is done or all are finished, allow viewing or exit on Enter/Q
-                            if (!Console.KeyAvailable)
-                            {
-                                await Task.Delay(100, CancellationToken.None);
-                            }
-                        }
-                        else
-                        {
-                            await Task.Delay(40, CancellationToken.None);
-                        }
-                    }
-                });
+                    });
+            }
+            finally
+            {
+                try
+                {
+                    Console.TreatControlCAsInput = originalTreatControlC;
+                }
+                catch { }
+            }
 
             try
             {
@@ -293,6 +319,46 @@ namespace Roslynade
             await Task.WhenAll(tasks);
         }
 
+        private void CopyActiveTabToClipboard(FileAnalysisState file)
+        {
+            string textToCopy;
+            if (file.ParsedReview != null)
+            {
+                textToCopy = CodeReviewRenderer.FormatPlainText(file.ParsedReview);
+            }
+            else
+            {
+                lock (file.LockObj)
+                {
+                    textToCopy = file.OutputBuffer.ToString();
+                }
+
+                if (string.IsNullOrWhiteSpace(textToCopy))
+                {
+                    textToCopy = file.Status switch
+                    {
+                        AnalysisFileStatus.Pending => "Queued, waiting for inference worker...",
+                        AnalysisFileStatus.Error => file.ErrorMessage ?? "Analysis error.",
+                        _ => "No content."
+                    };
+                }
+            }
+
+            // Normalize newlines for Windows clipboard
+            textToCopy = textToCopy.Replace("\r\n", "\n").Replace("\n", "\r\n");
+
+            bool success = ClipboardService.SetText(textToCopy);
+            _lastCopiedTime = DateTime.UtcNow;
+            if (success)
+            {
+                _lastCopiedMessage = $"✔ Copied panel text to clipboard ({textToCopy.Length:N0} chars)";
+            }
+            else
+            {
+                _lastCopiedMessage = "✖ Failed to copy to clipboard";
+            }
+        }
+
         private IRenderable BuildView()
         {
             var grid = new Grid().AddColumn();
@@ -350,7 +416,12 @@ namespace Roslynade
             grid.AddRow(tabRow);
 
             // 2. Instructions bar
-            var navHint = new Text("[Tab/Left/Right/1-9] Tabs   [Up/Down/PgUp/PgDn] Scroll   [End] Auto-scroll   [Q/Esc] Exit\n", new Style(Color.Grey));
+            bool showCopied = (DateTime.UtcNow - _lastCopiedTime) < TimeSpan.FromSeconds(2.5) && !string.IsNullOrEmpty(_lastCopiedMessage);
+            string copyFeedback = showCopied
+                ? $"   [black on green bold] {_lastCopiedMessage} [/]"
+                : "";
+
+            var navHint = new Markup($"[grey][[Tab/Left/Right/1-9]] Tabs   [[Up/Down/PgUp/PgDn]] Scroll   [[End]] Auto-scroll   [white on darkblue bold] C [/] Copy   [[Q/Esc]] Exit[/]{copyFeedback}\n");
             grid.AddRow(navHint);
 
             // 3. Active Tab Panel
@@ -513,6 +584,11 @@ namespace Roslynade
             {
                 headerText += $" - [grey]{Markup.Escape(activeFile.StructureSummary)}[/]";
             }
+
+            string copyButtonBadge = showCopied
+                ? $"[black on green bold]{Markup.Escape("[✔ Copied!]")}[/]"
+                : $"[white on darkblue bold]{Markup.Escape("[C] Copy")}[/]";
+            headerText += $"  {copyButtonBadge}";
 
             Color borderColor = activeFile.Status switch
             {

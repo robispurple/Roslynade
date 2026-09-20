@@ -38,17 +38,35 @@ namespace Roslynade.Models
         {
             string trimmed = raw.Trim();
 
-            // 1. Check for markdown code fence ```json ... ``` or ``` ... ```
-            var match = Regex.Match(trimmed, @"```(?:json)?\s*([\s\S]*?)\s*```", RegexOptions.IgnoreCase);
-            if (match.Success)
+            // 1. If already a JSON object starting with '{' and ending with '}', return as-is
+            if (trimmed.StartsWith('{') && trimmed.EndsWith('}'))
             {
-                trimmed = match.Groups[1].Value.Trim();
+                return trimmed;
             }
 
-            // 2. Extract substring between first '{' and last '}'
             int firstBrace = trimmed.IndexOf('{');
             int lastBrace = trimmed.LastIndexOf('}');
 
+            // 2. Check for markdown code fence ```json ... that starts before '{'
+            var match = Regex.Match(trimmed, @"```(?:json)?\s*", RegexOptions.IgnoreCase);
+            if (match.Success && (firstBrace < 0 || match.Index < firstBrace))
+            {
+                int contentStart = match.Index + match.Length;
+                int lastFence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
+                if (lastFence > contentStart)
+                {
+                    trimmed = trimmed.Substring(contentStart, lastFence - contentStart).Trim();
+                }
+                else
+                {
+                    trimmed = trimmed.Substring(contentStart).Trim();
+                }
+
+                firstBrace = trimmed.IndexOf('{');
+                lastBrace = trimmed.LastIndexOf('}');
+            }
+
+            // 3. Extract substring between first '{' and last '}'
             if (firstBrace >= 0 && lastBrace > firstBrace)
             {
                 return trimmed.Substring(firstBrace, lastBrace - firstBrace + 1);

@@ -1,3 +1,4 @@
+using System.Text;
 using Roslynade.Models;
 using Spectre.Console;
 using Spectre.Console.Rendering;
@@ -106,6 +107,71 @@ namespace Roslynade.Rendering
             }
 
             return lines;
+        }
+
+        public static string FormatPlainText(CodeReviewResult review)
+        {
+            var sb = new StringBuilder();
+
+            // 1. Overall Score Header
+            var (errors, warnings, suggestions) = GetSeverityCounts(review);
+            sb.AppendLine($"Health Score: {review.OverallScore}/100 | {errors} Error(s) | {warnings} Warning(s) | {suggestions} Suggestion(s)");
+            sb.AppendLine();
+
+            // 2. Summary Section
+            sb.AppendLine("── Summary ──────────────────────────────────────────");
+            if (!string.IsNullOrWhiteSpace(review.Summary))
+            {
+                sb.AppendLine(review.Summary.Trim());
+            }
+            else
+            {
+                sb.AppendLine("No summary provided.");
+            }
+            sb.AppendLine();
+
+            // 3. Issues Section
+            sb.AppendLine($"── Findings ({review.Issues.Count}) ────────────────────────────────");
+            if (review.Issues.Count == 0)
+            {
+                sb.AppendLine("✔ No issues detected. Clean and idiomatic code!");
+            }
+            else
+            {
+                for (int i = 0; i < review.Issues.Count; i++)
+                {
+                    var issue = review.Issues[i];
+                    string sev = issue.Severity.Trim().ToLowerInvariant() switch
+                    {
+                        "error" => "ERROR",
+                        "warning" or "warn" => "WARN",
+                        _ => "SUGG"
+                    };
+                    string lineText = issue.Line.HasValue ? $"Line {issue.Line}: " : "";
+                    sb.AppendLine($"[{sev}] {lineText}{issue.Title}");
+
+                    if (!string.IsNullOrWhiteSpace(issue.Description))
+                    {
+                        sb.AppendLine($"  {issue.Description.Trim()}");
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(issue.SuggestedFix))
+                    {
+                        sb.AppendLine("  Suggested Fix:");
+                        foreach (var fixLine in issue.SuggestedFix.Replace("\r\n", "\n").Split('\n'))
+                        {
+                            sb.AppendLine($"    {fixLine}");
+                        }
+                    }
+
+                    if (i < review.Issues.Count - 1)
+                    {
+                        sb.AppendLine("  ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈");
+                    }
+                }
+            }
+
+            return sb.ToString();
         }
 
         public static Table BuildIssuesTable(CodeReviewResult review, string fileName)
