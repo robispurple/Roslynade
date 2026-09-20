@@ -12,13 +12,12 @@ namespace Roslynade.Rendering
             int errors = 0, warnings = 0, suggestions = 0;
             foreach (var issue in review.Issues)
             {
-                switch (issue.Severity.Trim().ToLowerInvariant())
+                switch (issue.Severity)
                 {
-                    case "error":
+                    case Severity.Error:
                         errors++;
                         break;
-                    case "warning":
-                    case "warn":
+                    case Severity.Warning:
                         warnings++;
                         break;
                     default:
@@ -71,10 +70,10 @@ namespace Roslynade.Rendering
                 for (int i = 0; i < review.Issues.Count; i++)
                 {
                     var issue = review.Issues[i];
-                    string severityBadge = issue.Severity.Trim().ToLowerInvariant() switch
+                    string severityBadge = issue.Severity switch
                     {
-                        "error" => "[white on red bold] ERROR [/]",
-                        "warning" or "warn" => "[black on yellow bold] WARN [/]",
+                        Severity.Error => "[white on red bold] ERROR [/]",
+                        Severity.Warning => "[black on yellow bold] WARN [/]",
                         _ => "[black on cyan bold] SUGG [/]"
                     };
 
@@ -141,10 +140,10 @@ namespace Roslynade.Rendering
                 for (int i = 0; i < review.Issues.Count; i++)
                 {
                     var issue = review.Issues[i];
-                    string sev = issue.Severity.Trim().ToLowerInvariant() switch
+                    string sev = issue.Severity switch
                     {
-                        "error" => "ERROR",
-                        "warning" or "warn" => "WARN",
+                        Severity.Error => "ERROR",
+                        Severity.Warning => "WARN",
                         _ => "SUGG"
                     };
                     string lineText = issue.Line.HasValue ? $"Line {issue.Line}: " : "";
@@ -186,10 +185,10 @@ namespace Roslynade.Rendering
 
             foreach (var issue in review.Issues)
             {
-                string severityBadge = issue.Severity.Trim().ToLowerInvariant() switch
+                string severityBadge = issue.Severity switch
                 {
-                    "error" => "[red bold]ERROR[/]",
-                    "warning" or "warn" => "[yellow bold]WARN[/]",
+                    Severity.Error => "[red bold]ERROR[/]",
+                    Severity.Warning => "[yellow bold]WARN[/]",
                     _ => "[cyan]SUGG[/]"
                 };
 

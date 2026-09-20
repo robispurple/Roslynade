@@ -171,5 +171,19 @@ namespace Roslynade.Tests
             });
             Assert.NotNull(req);
         }
+
+        [Fact]
+        public void FoundryModelCatalogResponse_ModelsIsIReadOnlyList()
+        {
+            var response = new FoundryModelCatalogResponse();
+            Assert.IsAssignableFrom<IReadOnlyList<FoundryModelInfo>>(response.Models);
+            Assert.Empty(response.Models);
+
+            var model = new FoundryModelInfo
+            {
+                Alias = "test-model"
+            };
+            Assert.Equal("test-model", model.Alias);
+        }
     }
 }

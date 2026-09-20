@@ -18,7 +18,7 @@ namespace Roslynade.Tests
                 {
                     new()
                     {
-                        Severity = "Warning",
+                        Severity = Severity.Warning,
                         Line = 42,
                         Title = "Potential Null Reference",
                         Description = "The variable might be null here.",

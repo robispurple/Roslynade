@@ -33,7 +33,7 @@ namespace Roslynade.Tests
       Assert.Equal(92, result.OverallScore);
       Assert.Single(result.Issues);
       Assert.Equal(15, result.Issues[0].Line);
-      Assert.Equal("Warning", result.Issues[0].Severity);
+      Assert.Equal(Severity.Warning, result.Issues[0].Severity);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ namespace Roslynade.Tests
                 {
                     new()
                     {
-                        Severity = "Error",
+                        Severity = Severity.Error,
                         Line = 42,
                         Title = "Unsafe index access on items[i]",
                         Description = "Index items[i] may throw IndexOutOfRangeException if count < [10]. Use List<T>.TryGetValue or pattern matching [0..^1].",
@@ -170,8 +170,8 @@ namespace Roslynade.Tests
       Assert.NotNull(review);
       Assert.Equal(82, review.OverallScore);
       Assert.Equal(2, review.Issues.Count);
-      Assert.Equal("Warning", review.Issues[0].Severity);
-      Assert.Equal("Suggestion", review.Issues[1].Severity);
+      Assert.Equal(Severity.Warning, review.Issues[0].Severity);
+      Assert.Equal(Severity.Suggestion, review.Issues[1].Severity);
 
       var lines = CodeReviewRenderer.FormatScrollableMarkupLines(review, 80);
       Assert.NotEmpty(lines);
@@ -228,6 +228,39 @@ namespace Roslynade.Tests
       string extracted = CodeReviewParser.ExtractJson(raw);
       bool parsed = CodeReviewParser.TryParse(raw, out var review);
       Assert.True(parsed, $"Extracted was: {extracted}");
+    }
+
+    [Theory]
+    [InlineData("Error", Severity.Error)]
+    [InlineData("error", Severity.Error)]
+    [InlineData("ERROR", Severity.Error)]
+    [InlineData("Warning", Severity.Warning)]
+    [InlineData("warning", Severity.Warning)]
+    [InlineData("warn", Severity.Warning)]
+    [InlineData("Suggestion", Severity.Suggestion)]
+    [InlineData("suggestion", Severity.Suggestion)]
+    [InlineData("unknown_val", Severity.Suggestion)]
+    public void SeverityJsonConverter_ParsesVariationsGracefully(string rawSeverity, Severity expected)
+    {
+      string json = $$"""
+      {
+        "summary": "Sample summary",
+        "overallScore": 90,
+        "issues": [
+          {
+            "severity": "{{rawSeverity}}",
+            "title": "Test Title",
+            "description": "Test Desc"
+          }
+        ]
+      }
+      """;
+
+      bool success = CodeReviewParser.TryParse(json, out var result);
+      Assert.True(success);
+      Assert.NotNull(result);
+      Assert.Single(result.Issues);
+      Assert.Equal(expected, result.Issues[0].Severity);
     }
   }
 }

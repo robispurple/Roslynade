@@ -1,7 +1,50 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Roslynade.Models
 {
+    [JsonConverter(typeof(SeverityJsonConverter))]
+    public enum Severity
+    {
+        Error,
+        Warning,
+        Suggestion
+    }
+
+    public class SeverityJsonConverter : JsonConverter<Severity>
+    {
+        public override Severity Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                string? str = reader.GetString();
+                if (string.IsNullOrWhiteSpace(str))
+                {
+                    return Severity.Suggestion;
+                }
+
+                return str.Trim().ToLowerInvariant() switch
+                {
+                    "error" => Severity.Error,
+                    "warning" or "warn" => Severity.Warning,
+                    _ => Severity.Suggestion
+                };
+            }
+
+            if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out int intVal))
+            {
+                return Enum.IsDefined(typeof(Severity), intVal) ? (Severity)intVal : Severity.Suggestion;
+            }
+
+            return Severity.Suggestion;
+        }
+
+        public override void Write(Utf8JsonWriter writer, Severity value, JsonSerializerOptions options)
+        {
+            writer.WriteStringValue(value.ToString());
+        }
+    }
+
     public record CodeReviewResult
     {
         [JsonPropertyName("summary")]
@@ -17,7 +60,7 @@ namespace Roslynade.Models
     public record CodeIssue
     {
         [JsonPropertyName("severity")]
-        public string Severity { get; init; } = "Suggestion";
+        public Severity Severity { get; init; } = Severity.Suggestion;
 
         [JsonPropertyName("line")]
         public int? Line { get; init; }
@@ -32,4 +75,5 @@ namespace Roslynade.Models
         public string? SuggestedFix { get; init; }
     }
 }
+
 

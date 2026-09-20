@@ -5,13 +5,13 @@ namespace Roslynade.Models
     public record FoundryModelCatalogResponse
     {
         [JsonPropertyName("models")]
-        public List<FoundryModelInfo> Models { get; init; } = [];
+        public IReadOnlyList<FoundryModelInfo> Models { get; init; } = [];
     }
 
     public record FoundryModelInfo
     {
         [JsonPropertyName("alias")]
-        public string Alias { get; init; } = string.Empty;
+        public required string Alias { get; init; } = string.Empty;
 
         [JsonPropertyName("id")]
         public string Id { get; init; } = string.Empty;

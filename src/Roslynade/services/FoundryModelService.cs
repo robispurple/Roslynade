@@ -18,7 +18,7 @@ namespace Roslynade.Services
 
     public static class FoundryModelService
     {
-        public static async Task<List<FoundryModelInfo>> GetAvailableModelsAsync(CancellationToken cancellationToken = default)
+        public static async Task<IReadOnlyList<FoundryModelInfo>> GetAvailableModelsAsync(CancellationToken cancellationToken = default)
         {
             var startInfo = new ProcessStartInfo
             {
@@ -67,7 +67,7 @@ namespace Roslynade.Services
 
                 if (string.IsNullOrWhiteSpace(stdout))
                 {
-                    return new List<FoundryModelInfo>();
+                    return [];
                 }
 
                 try
@@ -86,7 +86,7 @@ namespace Roslynade.Services
                         PropertyNameCaseInsensitive = true
                     });
 
-                    return catalog?.Models ?? new List<FoundryModelInfo>();
+                    return catalog?.Models ?? [];
                 }
                 catch (JsonException jEx)
                 {

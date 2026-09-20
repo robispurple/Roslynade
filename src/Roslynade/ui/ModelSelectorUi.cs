@@ -20,7 +20,7 @@ namespace Roslynade.Ui
         {
             while (true)
             {
-                List<FoundryModelInfo> models = new();
+                IReadOnlyList<FoundryModelInfo> models = [];
                 bool fetchSuccess = false;
                 Exception? failureEx = null;
 
