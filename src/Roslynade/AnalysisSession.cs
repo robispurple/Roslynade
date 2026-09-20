@@ -32,12 +32,12 @@ namespace Roslynade
 
     public class AnalysisSession
     {
-        private readonly FoundryCodeAgent _agent;
+        private readonly ICodeAnalysisAgent _agent;
         private readonly List<FileAnalysisState> _files;
         private readonly int _maxConcurrency;
         private int _activeTabIndex;
 
-        public AnalysisSession(FoundryCodeAgent agent, IEnumerable<string> filePaths, int maxConcurrency = 2)
+        public AnalysisSession(ICodeAnalysisAgent agent, IEnumerable<string> filePaths, int maxConcurrency = 2)
         {
             _agent = agent;
             _maxConcurrency = Math.Max(1, maxConcurrency);

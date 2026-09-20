@@ -6,7 +6,7 @@ using Spectre.Console;
 
 namespace Roslynade.agent
 {
-    public class FoundryCodeAgent(string modelAlias = "qwen3.5-2b", bool preferGpu = true) : IAsyncDisposable
+    public class FoundryCodeAgent(string modelAlias = "qwen3.5-2b", bool preferGpu = true) : ICodeAnalysisAgent
     {
         private readonly string _modelAlias = modelAlias;
         private readonly bool _preferGpu = preferGpu;
@@ -142,39 +142,8 @@ namespace Roslynade.agent
                 }
             });
 
-            request.AddItem(new MessageItem(MessageRole.System, """
-                You are an expert C# static analysis engine.
-                Review the given C# code for bugs, performance bottlenecks, modern C# idiom improvements, and null-safety issues.
-                Respond ONLY with a valid JSON object matching this schema:
-                {
-                  "summary": "Brief executive summary of code quality and key findings.",
-                  "overallScore": 85,
-                  "issues": [
-                    {
-                      "severity": "Error" | "Warning" | "Suggestion",
-                      "line": 12,
-                      "title": "Short title describing the issue",
-                      "description": "Clear explanation of why this is a problem and what should be done.",
-                      "suggestedFix": "Code snippet illustrating the fix (optional)"
-                    }
-                  ]
-                }
-                Rules:
-                - overallScore must be an integer between 0 and 100.
-                - severity must be one of: "Error", "Warning", "Suggestion".
-                - summary must be 1 to 2 concise sentences. Do not repeat words or phrases.
-                - If the code is clean and has no issues, issues must be an empty list [].
-                - Output raw valid JSON only. Do not include markdown code block formatting or explanations outside the JSON.
-                """));
-
-            request.AddItem(new MessageItem(MessageRole.User, $"""
-                File summary: {structureSummary}
-
-                Code under review:
-                ```{Path.GetExtension(filePath).TrimStart('.')}
-                {code}
-                ```
-                """));
+            request.AddItem(new MessageItem(MessageRole.System, CodeReviewPrompts.SystemPrompt));
+            request.AddItem(new MessageItem(MessageRole.User, CodeReviewPrompts.BuildUserPrompt(structureSummary, Path.GetExtension(filePath), code)));
 
             var buffer = new System.Text.StringBuilder();
             await using var streamingResponse = session.ProcessStreamingRequestAsync(request, cancellationToken);
