@@ -10,7 +10,8 @@ namespace Roslynade.Models
         {
             PropertyNameCaseInsensitive = true,
             AllowTrailingCommas = true,
-            ReadCommentHandling = JsonCommentHandling.Skip
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
         };
 
         public static bool TryParse(string rawContent, [NotNullWhen(true)] out CodeReviewResult? result)
@@ -25,7 +26,7 @@ namespace Roslynade.Models
             {
                 string cleanJson = ExtractJson(rawContent);
                 result = JsonSerializer.Deserialize<CodeReviewResult>(cleanJson, JsonOptions);
-                return result != null;
+                return result != null && !string.IsNullOrWhiteSpace(result.Summary);
             }
             catch
             {

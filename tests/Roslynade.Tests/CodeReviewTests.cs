@@ -60,6 +60,33 @@ namespace Roslynade.Tests
         }
 
         [Fact]
+        public void Parse_NumbersAsStrings_Succeeds()
+        {
+            string jsonWithStrings = """
+            {
+              "summary": "Record lacks constructor.",
+              "overallScore": "85",
+              "issues": [
+                {
+                  "severity": "Warning",
+                  "line": "12",
+                  "title": "Missing ctor",
+                  "description": "Needs parameterless or primary constructor."
+                }
+              ]
+            }
+            """;
+
+            bool success = CodeReviewParser.TryParse(jsonWithStrings, out var result);
+
+            Assert.True(success);
+            Assert.NotNull(result);
+            Assert.Equal(85, result.OverallScore);
+            Assert.Single(result.Issues);
+            Assert.Equal(12, result.Issues[0].Line);
+        }
+
+        [Fact]
         public void Parse_InvalidJson_ReturnsFalse()
         {
             string bad = "This is not json at all.";

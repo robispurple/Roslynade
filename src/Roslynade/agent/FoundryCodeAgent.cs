@@ -1,7 +1,7 @@
-using Betalgo.Ranul.OpenAI.ObjectModels.RequestModels;
 using Microsoft.AI.Foundry.Local;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.Logging.Abstractions;
+using Roslynade.Models;
 using Spectre.Console;
 
 namespace Roslynade.agent
@@ -11,7 +11,7 @@ namespace Roslynade.agent
         private readonly string _modelAlias = modelAlias;
         private readonly bool _preferGpu = preferGpu;
         private IModel? _model;
-        private OpenAIChatClient? _chatClient;
+        private ChatSession? _chatSession;
 
         public async Task InitializeAsync()
         {
@@ -41,7 +41,10 @@ namespace Roslynade.agent
                 {
                     await AnsiConsole.Status().StartAsync("Registering hardware Execution Providers...", async ctx =>
                     {
-                        await manager.DownloadAndRegisterEpsAsync();
+                        await manager.DownloadAndRegisterEpsAsync((epName, percent) =>
+                        {
+                            ctx.Status($"Registering hardware Execution Provider [bold cyan]{Markup.Escape(epName)}[/]: {percent:F1}%");
+                        });
                     });
                 }
                 catch (Exception ex)
@@ -99,7 +102,8 @@ namespace Roslynade.agent
 
             // 4. Load model into memory/VRAM
             await _model.LoadAsync();
-            _chatClient = await _model.GetChatClientAsync();
+            _chatSession = new ChatSession(_model);
+            _chatSession.SetStreaming(true);
         }
 
         public async Task AnalyzeAsync(string filePath, CancellationToken cancellationToken = default)
@@ -117,8 +121,11 @@ namespace Roslynade.agent
             Action<string>? onStructureSummary = null,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            if (_chatClient == null)
+            if (_model == null)
                 throw new InvalidOperationException("Agent must be initialized before analyzing.");
+
+            using var session = new ChatSession(_model);
+            session.SetStreaming(true);
 
             string code = await File.ReadAllTextAsync(filePath, cancellationToken);
             var syntaxTree = CSharpSyntaxTree.ParseText(code, cancellationToken: cancellationToken);
@@ -126,67 +133,70 @@ namespace Roslynade.agent
             string structureSummary = RoslynAnalyzer.Analyze(root);
             onStructureSummary?.Invoke(structureSummary);
 
-            var messages = new List<ChatMessage>
+            using var request = new Request();
+            request.SetOptions(new RequestOptions
             {
-                new()
+                Search = new SearchOptions
                 {
-                    Role = "system",
-                    Content = """
-                    You are an expert C# static analysis engine.
-                    Review the given C# code for bugs, performance bottlenecks, modern C# idiom improvements, and null-safety issues.
-                    Respond ONLY with a valid JSON object matching this schema:
+                    MaxOutputTokens = 1500
+                }
+            });
+
+            request.AddItem(new MessageItem(MessageRole.System, """
+                You are an expert C# static analysis engine.
+                Review the given C# code for bugs, performance bottlenecks, modern C# idiom improvements, and null-safety issues.
+                Respond ONLY with a valid JSON object matching this schema:
+                {
+                  "summary": "Brief executive summary of code quality and key findings.",
+                  "overallScore": 85,
+                  "issues": [
                     {
-                      "summary": "Brief executive summary of code quality and key findings.",
-                      "overallScore": 85,
-                      "issues": [
-                        {
-                          "severity": "Error" | "Warning" | "Suggestion",
-                          "line": 12,
-                          "title": "Short title describing the issue",
-                          "description": "Clear explanation of why this is a problem and what should be done.",
-                          "suggestedFix": "Code snippet illustrating the fix (optional)"
-                        }
-                      ]
+                      "severity": "Error" | "Warning" | "Suggestion",
+                      "line": 12,
+                      "title": "Short title describing the issue",
+                      "description": "Clear explanation of why this is a problem and what should be done.",
+                      "suggestedFix": "Code snippet illustrating the fix (optional)"
                     }
-                    Rules:
-                    - overallScore must be an integer between 0 and 100.
-                    - severity must be one of: "Error", "Warning", "Suggestion".
-                    - Output raw valid JSON only. Do not include markdown code block formatting or explanations outside the JSON.
-                    """
-                },
-                new()
-                {
-                    Role = "user",
-                    Content = $"""
-                    File summary: {structureSummary}
-
-                    Code under review:
-                    ```{Path.GetExtension(filePath).TrimStart('.')}
-                    {code}
-                    ```
-                    """
+                  ]
                 }
-            };
+                Rules:
+                - overallScore must be an integer between 0 and 100.
+                - severity must be one of: "Error", "Warning", "Suggestion".
+                - summary must be 1 to 2 concise sentences. Do not repeat words or phrases.
+                - If the code is clean and has no issues, issues must be an empty list [].
+                - Output raw valid JSON only. Do not include markdown code block formatting or explanations outside the JSON.
+                """));
 
-            var streamingResponse = _chatClient.CompleteChatStreamingAsync(messages, cancellationToken);
-            await foreach (var chunk in streamingResponse.WithCancellation(cancellationToken))
+            request.AddItem(new MessageItem(MessageRole.User, $"""
+                File summary: {structureSummary}
+
+                Code under review:
+                ```{Path.GetExtension(filePath).TrimStart('.')}
+                {code}
+                ```
+                """));
+
+            var buffer = new System.Text.StringBuilder();
+            await using var streamingResponse = session.ProcessStreamingRequestAsync(request, cancellationToken);
+            await foreach (var item in streamingResponse.WithCancellation(cancellationToken))
             {
-                var content = chunk.Choices?[0]?.Delta?.Content ?? chunk.Choices?[0]?.Message?.Content;
-                if (!string.IsNullOrEmpty(content))
+                if (item is TextItem textItem && !string.IsNullOrEmpty(textItem.Text))
                 {
-                    yield return content;
-                }
+                    yield return textItem.Text;
+                    buffer.Append(textItem.Text);
 
-                var finishReason = chunk.Choices?[0]?.FinishReason;
-                if (!string.IsNullOrEmpty(finishReason))
-                {
-                    break;
+                    if ((textItem.Text.Contains('}') || textItem.Text.Contains('`') || buffer.Length > 200) &&
+                        CodeReviewParser.TryParse(buffer.ToString(), out _))
+                    {
+                        yield break;
+                    }
                 }
             }
         }
 
         public async ValueTask DisposeAsync()
         {
+            _chatSession?.Dispose();
             if (_model != null)
             {
                 await _model.UnloadAsync();

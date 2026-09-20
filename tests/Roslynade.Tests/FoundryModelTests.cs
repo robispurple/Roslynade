@@ -150,5 +150,24 @@ namespace Roslynade.Tests
             var result = Roslynade.Ui.ModelSelectorUi.SelectDevice(null);
             Assert.Equal("GPU", result);
         }
+
+        [Fact]
+        public void RequestOptions_ConfiguresSearchOptions()
+        {
+            using var req = new Microsoft.AI.Foundry.Local.Request();
+            req.SetOptions(new Microsoft.AI.Foundry.Local.RequestOptions
+            {
+                Search = new Microsoft.AI.Foundry.Local.SearchOptions
+                {
+                    MaxOutputTokens = 1500,
+                    Temperature = 0.6f,
+                    TopP = 0.9f,
+                    DoSample = true,
+                    FrequencyPenalty = 0.5f,
+                    PresencePenalty = 0.3f
+                }
+            });
+            Assert.NotNull(req);
+        }
     }
 }

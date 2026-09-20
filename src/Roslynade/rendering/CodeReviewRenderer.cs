@@ -157,7 +157,7 @@ namespace Roslynade.Rendering
             return table;
         }
 
-        private static IEnumerable<string> WrapText(string text, int maxWidth)
+        public static IEnumerable<string> WrapText(string text, int maxWidth)
         {
             if (maxWidth <= 0) maxWidth = 80;
             var words = text.Split(' ');

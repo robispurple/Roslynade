@@ -93,11 +93,12 @@ namespace Roslynade
                         lock (file.LockObj)
                         {
                             file.OutputBuffer.Append(chunk);
-                            if (file.ParsedReview == null && chunk.Contains('}'))
+                            if (file.ParsedReview == null && (chunk.Contains('}') || chunk.Contains('`') || file.OutputBuffer.Length > 200))
                             {
                                 if (CodeReviewParser.TryParse(file.OutputBuffer.ToString(), out var eagerReview))
                                 {
                                     file.ParsedReview = eagerReview;
+                                    break;
                                 }
                             }
                         }
@@ -251,11 +252,12 @@ namespace Roslynade
                         lock (file.LockObj)
                         {
                             file.OutputBuffer.Append(chunk);
-                            if (file.ParsedReview == null && chunk.Contains('}'))
+                            if (file.ParsedReview == null && (chunk.Contains('}') || chunk.Contains('`') || file.OutputBuffer.Length > 200))
                             {
                                 if (CodeReviewParser.TryParse(file.OutputBuffer.ToString(), out var eagerReview))
                                 {
                                     file.ParsedReview = eagerReview;
+                                    break;
                                 }
                             }
                         }
@@ -404,12 +406,29 @@ namespace Roslynade
                 displayLines.Add($"[grey]Inference Stream:[/] [yellow]{charCount:N0} characters received[/]");
                 displayLines.Add("[grey]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]");
 
-                var previewLines = streamSnapshot.Replace("\r\n", "\n").Split('\n');
-                var recentLines = previewLines.Where(l => !string.IsNullOrWhiteSpace(l)).TakeLast(Math.Max(3, viewportHeight - 8));
+                var rawLines = streamSnapshot.Replace("\r\n", "\n").Split('\n');
+                var wrappedLines = new List<string>();
+                int maxWrapWidth = Math.Max(20, usableWidth - 4);
+                foreach (var rawLine in rawLines)
+                {
+                    if (string.IsNullOrWhiteSpace(rawLine)) continue;
+                    if (rawLine.Length <= maxWrapWidth)
+                    {
+                        wrappedLines.Add(rawLine);
+                    }
+                    else
+                    {
+                        foreach (var segment in CodeReviewRenderer.WrapText(rawLine, maxWrapWidth))
+                        {
+                            wrappedLines.Add(segment);
+                        }
+                    }
+                }
+
+                var recentLines = wrappedLines.TakeLast(Math.Max(3, viewportHeight - 8));
                 foreach (var line in recentLines)
                 {
-                    string safeLine = Markup.Escape(line.Length > usableWidth ? line.Substring(0, usableWidth) : line);
-                    displayLines.Add($"  [grey italic]{safeLine}[/]");
+                    displayLines.Add($"  [grey italic]{Markup.Escape(line)}[/]");
                 }
             }
             else
